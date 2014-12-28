@@ -3,7 +3,6 @@ package jira
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -13,18 +12,14 @@ import (
 	"time"
 )
 
-var (
-	ErrNotFound = errors.New("Not found")
-)
-
 type Error struct {
 	StatusCode int
 	Status     string
-	Msg        string
+	Message    string
 }
 
 func (e Error) Error() string {
-	return fmt.Sprintf("%s: %s", e.Status, e.Msg)
+	return fmt.Sprintf("%s: %s", e.Status, e.Message)
 }
 
 type Issue struct {
@@ -39,13 +34,11 @@ type Jira struct {
 	baseUrl *url.URL
 	user    string
 	pass    string
-	client  *http.Client
+	res     *http.Client
 }
 
 func New(jiraUrl string, user string, pass string, timeout time.Duration) (
-	*Jira,
-	error,
-) {
+	*Jira, error) {
 	baseUrl, err := url.Parse(jiraUrl)
 	if err != nil {
 		return nil, err
@@ -57,24 +50,25 @@ func New(jiraUrl string, user string, pass string, timeout time.Duration) (
 		},
 	}}
 
-	j := &Jira{
+	jira := &Jira{
 		baseUrl: baseUrl,
 		user:    user,
 		pass:    pass,
-		client:  httpClient,
+		res:     httpClient,
 	}
 
-	return j, nil
+	return jira, nil
 }
 
-func (j *Jira) GetIssue(key string, fields []string) (issue *Issue, err error) {
+func (jira *Jira) GetIssue(key string, fields []string) (
+	issue *Issue, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
 		}
 	}()
 
-	response, err := j.Request("GET",
+	response, err := jira.Request("GET",
 		"issue/"+key+"/?fields="+strings.Join(fields, ","),
 		[]byte{})
 	if err != nil {
@@ -102,24 +96,24 @@ func (j *Jira) GetIssue(key string, fields []string) (issue *Issue, err error) {
 	return issue, nil
 }
 
-func (j *Jira) GetProjectTitle(key string) (title string, err error) {
+func (jira *Jira) GetProjectTitle(key string) (title string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
 		}
 	}()
-	b, err := j.Request("GET", "project/"+key, []byte{})
+	body, err := jira.Request("GET", "project/"+key, []byte{})
 	if err != nil {
 		return "", err
 	}
-	var f interface{}
-	if err := json.Unmarshal(b, &f); err != nil {
+	var rawData interface{}
+	if err := json.Unmarshal(body, &rawData); err != nil {
 		return "", err
 	}
-	return f.(map[string]interface{})["name"].(string), nil
+	return rawData.(map[string]interface{})["name"].(string), nil
 }
 
-func (j *Jira) Comment(issue string, msg string) (err error) {
+func (jira *Jira) Comment(issue string, msg string) error {
 	type comment struct {
 		Data string `json:"body"`
 	}
@@ -128,7 +122,7 @@ func (j *Jira) Comment(issue string, msg string) (err error) {
 	if err != nil {
 		return err
 	}
-	_, err = j.Request("POST", "issue/"+issue+"/comment", body)
+	_, err = jira.Request("POST", "issue/"+issue+"/comment", body)
 	if err != nil {
 		return err
 	}
@@ -136,18 +130,19 @@ func (j *Jira) Comment(issue string, msg string) (err error) {
 	return nil
 }
 
-func (j *Jira) Request(method string, path string, body []byte) ([]byte, error) {
-	b := bytes.NewBuffer(body)
+func (jira *Jira) Request(method string, path string, body []byte) (
+	[]byte, error) {
+	buffer := bytes.NewBuffer(body)
 
-	req, err := http.NewRequest(method, j.baseUrl.String()+path, b)
+	req, err := http.NewRequest(method, jira.baseUrl.String()+path, buffer)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Add("Content-Type", "application/json; charset=utf-8")
-	req.SetBasicAuth(j.user, j.pass)
+	req.SetBasicAuth(jira.user, jira.pass)
 
-	resp, err := j.client.Do(req)
+	resp, err := jira.res.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -157,11 +152,17 @@ func (j *Jira) Request(method string, path string, body []byte) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+
 	if resp.StatusCode == 404 {
-		return nil, ErrNotFound
+		return nil, Error{
+			StatusCode: resp.StatusCode, Status: resp.Status,
+			Message: "Not Found"}
 	}
-	if resp.StatusCode >= 400 {
-		return nil, Error{StatusCode: resp.StatusCode, Status: resp.Status, Msg: string(data)}
+
+	if resp.StatusCode >= 500 {
+		return nil, Error{StatusCode: resp.StatusCode,
+			Status: resp.Status, Message: string(data)}
 	}
+
 	return data, nil
 }
