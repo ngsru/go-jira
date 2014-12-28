@@ -30,15 +30,15 @@ type Issue struct {
 	Data    map[string]interface{}
 }
 
-type Jira struct {
+type Client struct {
 	baseUrl *url.URL
 	user    string
 	pass    string
 	res     *http.Client
 }
 
-func New(jiraUrl string, user string, pass string, timeout time.Duration) (
-	*Jira, error) {
+func NewClient(jiraUrl string, user string, pass string, timeout time.Duration) (
+	*Client, error) {
 	baseUrl, err := url.Parse(jiraUrl)
 	if err != nil {
 		return nil, err
@@ -50,17 +50,17 @@ func New(jiraUrl string, user string, pass string, timeout time.Duration) (
 		},
 	}}
 
-	jira := &Jira{
+	client := &Client{
 		baseUrl: baseUrl,
 		user:    user,
 		pass:    pass,
 		res:     httpClient,
 	}
 
-	return jira, nil
+	return client, nil
 }
 
-func (jira *Jira) GetIssue(key string, fields []string) (
+func (client *Client) GetIssue(key string, fields []string) (
 	issue *Issue, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -68,7 +68,7 @@ func (jira *Jira) GetIssue(key string, fields []string) (
 		}
 	}()
 
-	response, err := jira.Request("GET",
+	response, err := client.Request("GET",
 		"issue/"+key+"/?fields="+strings.Join(fields, ","),
 		[]byte{})
 	if err != nil {
@@ -96,13 +96,13 @@ func (jira *Jira) GetIssue(key string, fields []string) (
 	return issue, nil
 }
 
-func (jira *Jira) GetProjectTitle(key string) (title string, err error) {
+func (client *Client) GetProjectTitle(key string) (title string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
 		}
 	}()
-	body, err := jira.Request("GET", "project/"+key, []byte{})
+	body, err := client.Request("GET", "project/"+key, []byte{})
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +113,7 @@ func (jira *Jira) GetProjectTitle(key string) (title string, err error) {
 	return rawData.(map[string]interface{})["name"].(string), nil
 }
 
-func (jira *Jira) Comment(issue string, msg string) error {
+func (client *Client) Comment(issue string, msg string) error {
 	type comment struct {
 		Data string `json:"body"`
 	}
@@ -122,7 +122,7 @@ func (jira *Jira) Comment(issue string, msg string) error {
 	if err != nil {
 		return err
 	}
-	_, err = jira.Request("POST", "issue/"+issue+"/comment", body)
+	_, err = client.Request("POST", "issue/"+issue+"/comment", body)
 	if err != nil {
 		return err
 	}
@@ -130,19 +130,19 @@ func (jira *Jira) Comment(issue string, msg string) error {
 	return nil
 }
 
-func (jira *Jira) Request(method string, path string, body []byte) (
+func (client *Client) Request(method string, path string, body []byte) (
 	[]byte, error) {
 	buffer := bytes.NewBuffer(body)
 
-	req, err := http.NewRequest(method, jira.baseUrl.String()+path, buffer)
+	req, err := http.NewRequest(method, client.baseUrl.String()+path, buffer)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Add("Content-Type", "application/json; charset=utf-8")
-	req.SetBasicAuth(jira.user, jira.pass)
+	req.SetBasicAuth(client.user, client.pass)
 
-	resp, err := jira.res.Do(req)
+	resp, err := client.res.Do(req)
 	if err != nil {
 		return nil, err
 	}
