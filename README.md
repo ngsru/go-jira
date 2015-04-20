@@ -8,7 +8,7 @@ The package has a low functionality, because it was done for specific tasks.
 
 ```
 // creating a Jira Client instance:
-jira, err := new jira.NewClient("http://jira.local/", "username", "password")
+jira, err := new jira.NewClient("http://jira.local/", "username", "password", 15*time.Second)
 if err != nil {
     //catch
 }
