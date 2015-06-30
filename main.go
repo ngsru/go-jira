@@ -159,7 +159,7 @@ func (client *Client) Request(method string, path string, body []byte) (
 			Message: "Not Found"}
 	}
 
-	if resp.StatusCode >= 500 {
+	if (resp.StatusCode == 400) || (resp.StatusCode >= 500) {
 		return nil, Error{StatusCode: resp.StatusCode,
 			Status: resp.Status, Message: string(data)}
 	}
